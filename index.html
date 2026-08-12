@@ -21,51 +21,99 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            min-height: 100vh;
             margin: 0;
             overflow: hidden;
         }
 
         .container {
             background: var(--card);
-            padding: 3rem;
+            padding: 2.5rem;
             border-radius: 1.5rem;
             box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
             text-align: center;
             width: 90%;
-            max-width: 400px;
+            max-width: 440px;
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
         h1 {
             font-size: 1.2rem;
             opacity: 0.8;
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
             letter-spacing: 1px;
         }
 
-        #display-area {
-            min-height: 150px;
+        /* --- ROLETA --- */
+        #wheel-wrap {
+            position: relative;
+            width: 320px;
+            height: 320px;
+            margin: 0 auto 1rem;
+        }
+
+        /* Ponteiro no topo */
+        #pointer {
+            position: absolute;
+            top: -6px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 16px solid transparent;
+            border-right: 16px solid transparent;
+            border-top: 28px solid var(--accent);
+            z-index: 5;
+            filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.5));
+        }
+
+        #wheel {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            box-shadow: 0 0 0 8px #0b1220, 0 0 30px rgba(0, 0, 0, 0.6),
+                inset 0 0 20px rgba(0, 0, 0, 0.4);
+            /* A rotação é controlada por JS para sincronizar o som */
+        }
+
+        /* Botão central */
+        #hub {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 58px;
+            height: 58px;
+            border-radius: 50%;
+            background: var(--card);
+            border: 4px solid var(--accent);
             display: flex;
-            flex-direction: column;
-            justify-content: center;
             align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            font-weight: 800;
+            color: var(--accent);
+            z-index: 4;
+            box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
         }
 
         .result {
-            font-size: 2.5rem;
+            font-size: 1.8rem;
             font-weight: 800;
             color: var(--accent);
             text-shadow: 0 0 15px rgba(16, 185, 129, 0.4);
-            margin: 1rem 0;
-            display: none;
-            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            margin: 0.5rem 0 0;
+            min-height: 2.2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.4s;
         }
 
-        /* Efeito de brilho pulsante no resultado */
-        .result {
-            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275),
-                glow 2s ease-in-out infinite alternate;
+        .result.show {
+            opacity: 1;
+            animation: glow 2s ease-in-out infinite alternate;
         }
 
         @keyframes glow {
@@ -76,16 +124,6 @@
             to {
                 text-shadow: 0 0 25px rgba(16, 185, 129, 0.8), 0 0 10px rgba(16, 185, 129, 0.6);
             }
-        }
-
-        .loader {
-            border: 4px solid rgba(255, 255, 255, 0.1);
-            border-left-color: var(--primary);
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            display: none;
         }
 
         button {
@@ -101,31 +139,18 @@
             margin-top: 1rem;
         }
 
-        button:hover {
+        button:hover:not(:disabled) {
             transform: translateY(-2px);
             filter: brightness(1.2);
         }
 
-        button:active {
+        button:active:not(:disabled) {
             transform: translateY(0);
         }
 
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
-        }
-
-        @keyframes popIn {
-            from {
-                opacity: 0;
-                transform: scale(0.5);
-            }
-
-            to {
-                opacity: 1;
-                transform: scale(1);
-            }
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
     </style>
 </head>
@@ -135,11 +160,13 @@
     <div class="container">
         <h1>O QUE VAMOS FAZER HOJE?</h1>
 
-        <div id="display-area">
-            <div id="loader" class="loader"></div>
-            <div id="result" class="result"></div>
-            <div id="placeholder" style="font-style: italic; opacity: 0.5;">Sorteie uma opção de rolê pra hoje...</div>
+        <div id="wheel-wrap">
+            <div id="pointer"></div>
+            <canvas id="wheel" width="600" height="600"></canvas>
+            <div id="hub">GIRA</div>
         </div>
+
+        <div id="result" class="result">Sorteie uma opção de rolê pra hoje...</div>
 
         <button id="draw-btn" onclick="sortear()">SORTEAR</button>
     </div>
@@ -167,48 +194,192 @@
         ];
         // ----------------------------
 
-        let ultimosSorteados = []; // Fila para evitar repetição próxima
+        // Paleta de cores vibrantes que se repete ao longo da roleta
+        const cores = [
+            "#ef4444", "#f97316", "#f59e0b", "#eab308",
+            "#84cc16", "#22c55e", "#10b981", "#14b8a6",
+            "#06b6d4", "#3b82f6", "#6366f1", "#8b5cf6",
+            "#a855f7", "#d946ef", "#ec4899", "#f43f5e"
+        ];
+
+        const canvas = document.getElementById('wheel');
+        const ctx = canvas.getContext('2d');
+        const size = canvas.width;
+        const raio = size / 2;
+        const n = listaSecreta.length;
+        const fatia = (2 * Math.PI) / n; // ângulo de cada fatia em radianos
+
+        let rotacaoAtual = 0;          // rotação acumulada em graus
+        let ultimosSorteados = [];     // memória para evitar repetição próxima
+        let girando = false;
+
+        const DURACAO = 10000;         // duração do giro em ms (10 segundos)
+
+        // --- ÁUDIO (Web Audio API, sem arquivos externos) ---
+        let audioCtx = null;
+        function garantirAudio() {
+            if (!audioCtx) {
+                const AC = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AC();
+            }
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        // "Tick" mecânico curto (a cada fatia que passa pelo ponteiro)
+        function playTick() {
+            if (!audioCtx) return;
+            const t = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = "square";
+            osc.frequency.setValueAtTime(1400, t);
+            osc.frequency.exponentialRampToValueAtTime(600, t + 0.03);
+            gain.gain.setValueAtTime(0.0001, t);
+            gain.gain.exponentialRampToValueAtTime(0.25, t + 0.002);
+            gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+            osc.connect(gain).connect(audioCtx.destination);
+            osc.start(t);
+            osc.stop(t + 0.06);
+        }
+
+        // Som de vitória ao parar (pequeno arpejo ascendente)
+        function playWin() {
+            if (!audioCtx) return;
+            const notas = [523.25, 659.25, 783.99, 1046.5]; // C5 E5 G5 C6
+            notas.forEach((f, i) => {
+                const t = audioCtx.currentTime + i * 0.12;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = "triangle";
+                osc.frequency.setValueAtTime(f, t);
+                gain.gain.setValueAtTime(0.0001, t);
+                gain.gain.exponentialRampToValueAtTime(0.3, t + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+                osc.connect(gain).connect(audioCtx.destination);
+                osc.start(t);
+                osc.stop(t + 0.45);
+            });
+        }
+
+        // Desenha a roleta com todas as fatias coloridas + texto
+        function desenharRoleta() {
+            ctx.clearRect(0, 0, size, size);
+            for (let i = 0; i < n; i++) {
+                const inicio = i * fatia;
+                const fim = inicio + fatia;
+
+                // Fatia
+                ctx.beginPath();
+                ctx.moveTo(raio, raio);
+                ctx.arc(raio, raio, raio, inicio, fim);
+                ctx.closePath();
+                ctx.fillStyle = cores[i % cores.length];
+                ctx.fill();
+                ctx.strokeStyle = "rgba(15, 23, 42, 0.6)";
+                ctx.lineWidth = 3;
+                ctx.stroke();
+
+                // Texto
+                ctx.save();
+                ctx.translate(raio, raio);
+                ctx.rotate(inicio + fatia / 2);
+                ctx.textAlign = "right";
+                ctx.fillStyle = "#0f172a";
+                ctx.font = "bold 20px system-ui, sans-serif";
+                const txt = listaSecreta[i].length > 22
+                    ? listaSecreta[i].slice(0, 21) + "…"
+                    : listaSecreta[i];
+                ctx.fillText(txt, raio - 22, 7);
+                ctx.restore();
+            }
+        }
+        desenharRoleta();
+
+        // Desaceleração suave (easeOutQuart): rápido no começo, lento no fim
+        function easeOut(t) {
+            return 1 - Math.pow(1 - t, 4);
+        }
 
         function sortear() {
             const btn = document.getElementById('draw-btn');
-            const loader = document.getElementById('loader');
             const result = document.getElementById('result');
-            const placeholder = document.getElementById('placeholder');
 
-            // Validação de segurança para listas pequenas
             if (listaSecreta.length <= 2) {
                 alert("A lista precisa de pelo menos 3 itens para evitar repetições imediatas!");
                 return;
             }
+            if (girando) return;
+            girando = true;
 
-            // Reset visual
+            garantirAudio(); // libera o áudio no gesto do clique
+
             btn.disabled = true;
             btn.innerText = "SORTEANDO...";
-            placeholder.style.display = 'none';
-            result.style.display = 'none';
-            loader.style.display = 'block';
+            result.classList.remove('show');
 
-            setTimeout(() => {
-                let disponiveis = listaSecreta.filter(item => !ultimosSorteados.includes(item));
+            // 1) Escolhe o item respeitando a memória (sem repetir os últimos 2)
+            let disponiveis = listaSecreta
+                .map((item, idx) => ({ item, idx }))
+                .filter(o => !ultimosSorteados.includes(o.item));
 
-                // Sorteio puramente aleatório sobre os disponíveis
-                const index = Math.floor(Math.random() * disponiveis.length);
-                const escolhido = disponiveis[index];
+            const sorteio = disponiveis[Math.floor(Math.random() * disponiveis.length)];
+            const escolhido = sorteio.item;
+            const indexEscolhido = sorteio.idx;
 
-                // Gerencia a fila de "memória"
-                ultimosSorteados.push(escolhido);
-                if (ultimosSorteados.length > 2) {
-                    ultimosSorteados.shift(); // Remove o mais antigo (libera para sorteio novamente)
+            // 2) Calcula o ângulo de destino
+            // O ponteiro fica no topo (270°). Alinhamos o CENTRO da fatia sorteada a ele.
+            const fatiaGraus = 360 / n;
+            const centroFatia = indexEscolhido * fatiaGraus + fatiaGraus / 2;
+            const voltas = 10; // mais voltas para preencher os 10 segundos
+
+            let alvoBase = 270 - centroFatia;
+            const rotacaoNormalizada = rotacaoAtual % 360;
+            let delta = alvoBase - rotacaoNormalizada;
+            delta = ((delta % 360) + 360) % 360; // 0..360 positivo
+
+            const rotacaoInicial = rotacaoAtual;
+            const rotacaoFinal = rotacaoAtual + voltas * 360 + delta;
+
+            // 3) Anima via requestAnimationFrame e dispara um "tick" a cada fatia
+            let inicio = null;
+            let ultimaFatia = -1;
+
+            function frame(agora) {
+                if (inicio === null) inicio = agora;
+                const decorrido = agora - inicio;
+                const p = Math.min(decorrido / DURACAO, 1);
+                const eased = easeOut(p);
+
+                rotacaoAtual = rotacaoInicial + (rotacaoFinal - rotacaoInicial) * eased;
+                canvas.style.transform = `rotate(${rotacaoAtual}deg)`;
+
+                // Toca um tick sempre que uma nova fatia cruza o ponteiro
+                const fatiaCorrente = Math.floor(rotacaoAtual / fatiaGraus);
+                if (fatiaCorrente !== ultimaFatia && p < 1) {
+                    ultimaFatia = fatiaCorrente;
+                    playTick();
                 }
 
-                // Exibição
-                loader.style.display = 'none';
-                result.innerText = escolhido;
-                result.style.display = 'block';
+                if (p < 1) {
+                    requestAnimationFrame(frame);
+                } else {
+                    // 4) Fim: resultado, som de vitória e atualização da memória
+                    rotacaoAtual = rotacaoFinal;
+                    canvas.style.transform = `rotate(${rotacaoAtual}deg)`;
 
-                btn.disabled = false;
-                btn.innerText = "SORTEAR NOVAMENTE";
-            }, 1500);
+                    ultimosSorteados.push(escolhido);
+                    if (ultimosSorteados.length > 2) ultimosSorteados.shift();
+
+                    result.innerText = escolhido;
+                    result.classList.add('show');
+                    playWin();
+
+                    btn.disabled = false;
+                    btn.innerText = "SORTEAR NOVAMENTE";
+                    girando = false;
+                }
+            }
+            requestAnimationFrame(frame);
         }
     </script>
 
